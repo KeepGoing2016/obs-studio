@@ -561,7 +561,7 @@ static bool obs_init_data(void)
 		goto fail;
 	if (pthread_mutex_init(&data->services_mutex, &attr) != 0)
 		goto fail;
-	if (pthread_mutex_init(&obs->data.draw_callbacks_mutex, NULL) != 0)
+	if (pthread_mutex_init(&obs->data.draw_callbacks_mutex, &attr) != 0)
 		goto fail;
 	if (pthread_mutex_init(&obs->data.rename_cache_mutex, NULL) != 0)
 		goto fail;
@@ -627,6 +627,7 @@ static void obs_free_data(void)
 	pthread_mutex_destroy(&data->draw_callbacks_mutex);
 	pthread_mutex_destroy(&data->rename_cache_mutex);
 	da_free(data->draw_callbacks);
+	da_free(data->tick_callbacks);
 }
 
 static const char *obs_signals[] = {
@@ -1976,6 +1977,34 @@ void obs_get_audio_monitoring_device(const char **name, const char **id)
 		*id = obs->audio.monitoring_device_id;
 }
 
+void obs_add_tick_callback(
+		void (*tick)(void *param, float seconds),
+		void *param)
+{
+	if (!obs)
+		return;
+
+	struct tick_callback data = {tick, param};
+
+	pthread_mutex_lock(&obs->data.draw_callbacks_mutex);
+	da_insert(obs->data.tick_callbacks, 0, &data);
+	pthread_mutex_unlock(&obs->data.draw_callbacks_mutex);
+}
+
+void obs_remove_tick_callback(
+		void (*tick)(void *param, float seconds),
+		void *param)
+{
+	if (!obs)
+		return;
+
+	struct tick_callback data = {tick, param};
+
+	pthread_mutex_lock(&obs->data.draw_callbacks_mutex);
+	da_erase_item(obs->data.tick_callbacks, &data);
+	pthread_mutex_unlock(&obs->data.draw_callbacks_mutex);
+}
+
 void obs_add_main_render_callback(
 		void (*draw)(void *param, uint32_t cx, uint32_t cy),
 		void *param)
@@ -1986,7 +2015,7 @@ void obs_add_main_render_callback(
 	struct draw_callback data = {draw, param};
 
 	pthread_mutex_lock(&obs->data.draw_callbacks_mutex);
-	da_push_back(obs->data.draw_callbacks, &data);
+	da_insert(obs->data.draw_callbacks, 0, &data);
 	pthread_mutex_unlock(&obs->data.draw_callbacks_mutex);
 }
 
